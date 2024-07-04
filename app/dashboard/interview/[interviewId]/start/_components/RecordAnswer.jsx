@@ -40,38 +40,59 @@ const RecordAnswer = ({ interviewQuestion, activeQuestionIndex, interviewData })
 
     const saveUserAnswer = async () => {
         if (isRecording) {
-            setLoading(true)
+            setLoading(true);
             console.log("Stopping recording...");
             stopSpeechToText();
             console.log("Final Answer:", userAnswer);
-            const feedbackPrompt = "Question:" + interviewQuestion[activeQuestionIndex]?.question + ", User Answer:" + userAnswer + ",Depends on question and user answer" + " please give us a rating for answer and feedback as area of improvement if any " + "in just 3 to 5 lines to improve it in json format with rating field and feedback field";
-            const result = await chatSession.sendMessage(feedbackPrompt);
-            const mockJsonResp = (result.response.text()).replace('```json', '').replace('```', '');
-            console.log(mockJsonResp);
-            const JsonFeedbackResp = JSON.parse(mockJsonResp)
-            const resp = await db.insert(UserAnswer)
-                .values({
-                    mockIdRef: interviewData.mockId,
-                    question: interviewQuestion[activeQuestionIndex]?.question,
-                    correctAns: interviewQuestion[activeQuestionIndex]?.answer,
-                    userAns: userAnswer,
-                    feedback: JsonFeedbackResp.feedback,
-                    rating: JsonFeedbackResp.rating,
-                    userEmail: user?.primaryEmailAddress.emailAddress,
-                    createdAt: moment().format('DD-MM-yyyy')
-                });
-            if (resp) {
-                toast('User answer recorded successfully')
-                setResults([]);
+            const questions = Array.isArray(interviewQuestion)
+                ? interviewQuestion
+                : interviewQuestion.questions || [];
+
+            const currentQuestion = questions[activeQuestionIndex]?.question;
+            if (!currentQuestion) {
+                console.error("Current question is null or undefined");
+                toast.error("Failed to record answer: Invalid question");
+                setLoading(false);
+                return;
             }
-            setResults([])
+
+            const feedbackPrompt = `Question: ${currentQuestion}, User Answer: ${userAnswer}, Depends on question and user answer please give us a rating for answer and feedback as area of improvement if any in just 3 to 5 lines to improve it in json format with rating field and feedback field`;
+
+            try {
+                const result = await chatSession.sendMessage(feedbackPrompt);
+                const mockJsonResp = (await result.response.text()).replace('```json', '').replace('```', '');
+                console.log("Mock JSON Response:", mockJsonResp);
+
+                const JsonFeedbackResp = JSON.parse(mockJsonResp);
+                const resp = await db.insert(UserAnswer)
+                    .values({
+                        mockIdRef: interviewData.mockId,
+                        question: currentQuestion,
+                        correctAns: questions[activeQuestionIndex]?.answer,
+                        userAns: userAnswer,
+                        feedback: JsonFeedbackResp.feedback,
+                        rating: JsonFeedbackResp.rating,
+                        userEmail: user?.primaryEmailAddress.emailAddress,
+                        createdAt: moment().format('DD-MM-yyyy')
+                    });
+
+                if (resp) {
+                    toast('User answer recorded successfully');
+                    setResults([]);
+                }
+            } catch (error) {
+                console.error("Error saving user answer:", error);
+                toast.error("Failed to record answer: " + error.message);
+            }
+
+            setResults([]);
             setLoading(false);
         } else {
             console.log("Starting recording...");
             startSpeechToText();
         }
+    };
 
-    }
 
     return (
         <div className='flex flex-col justify-center items-center'>
@@ -93,7 +114,7 @@ const RecordAnswer = ({ interviewQuestion, activeQuestionIndex, interviewData })
                     'Record Answer'
                 )}
             </Button>
-            
+
         </div>
     )
 }
